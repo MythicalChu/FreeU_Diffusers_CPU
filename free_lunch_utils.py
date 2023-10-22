@@ -128,13 +128,7 @@ def register_free_upblock2d(model, b1=1.2, b2=1.4, s1=0.9, s2=0.2):
                 res_hidden_states_tuple = res_hidden_states_tuple[:-1]
 
                 # --------------- FreeU code -----------------------
-                # Only operate on the first two stages
-                if hidden_states.shape[1] == 1280:
-                    hidden_states[:,:640] = hidden_states[:,:640] * self.b1
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s1)
-                if hidden_states.shape[1] == 640:
-                    hidden_states[:,:320] = hidden_states[:,:320] * self.b2
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s2)
+                freeu_code(hidden_states, res_hidden_states, self)
                 # ---------------------------------------------------------
 
                 hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
@@ -280,13 +274,7 @@ def register_free_crossattn_upblock2d(model, b1=1.2, b2=1.4, s1=0.9, s2=0.2):
                 res_hidden_states_tuple = res_hidden_states_tuple[:-1]
 
                 # --------------- FreeU code -----------------------
-                # Only operate on the first two stages
-                if hidden_states.shape[1] == 1280:
-                    hidden_states[:,:640] = hidden_states[:,:640] * self.b1
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s1)
-                if hidden_states.shape[1] == 640:
-                    hidden_states[:,:320] = hidden_states[:,:320] * self.b2
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s2)
+                freeu_code(hidden_states, res_hidden_states, self)
                 # ---------------------------------------------------------
 
                 hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
@@ -409,13 +397,7 @@ def register_free_upblock3d(model, b1=1.2, b2=1.4, s1=0.9, s2=0.2):
                 res_hidden_states_tuple = res_hidden_states_tuple[:-1]
 
                 # --------------- FreeU code -----------------------
-                # Only operate on the first two stages
-                if hidden_states.shape[1] == 1280:
-                    hidden_states[:,:640] = hidden_states[:,:640] * self.b1
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s1)
-                if hidden_states.shape[1] == 640:
-                    hidden_states[:,:320] = hidden_states[:,:320] * self.b2
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s2)
+                freeu_code(hidden_states, res_hidden_states, self)
                 # ---------------------------------------------------------
 
                 hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
@@ -518,13 +500,7 @@ def register_free_crossattn_upblock3d(model, b1=1.2, b2=1.4, s1=0.9, s2=0.2):
                 res_hidden_states_tuple = res_hidden_states_tuple[:-1]
 
                 # --------------- FreeU code -----------------------
-                # Only operate on the first two stages
-                if hidden_states.shape[1] == 1280:
-                    hidden_states[:,:640] = hidden_states[:,:640] * self.b1
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s1)
-                if hidden_states.shape[1] == 640:
-                    hidden_states[:,:320] = hidden_states[:,:320] * self.b2
-                    res_hidden_states = Fourier_filter(res_hidden_states, threshold=1, scale=self.s2)
+                freeu_code(hidden_states, res_hidden_states, self)
                 # ---------------------------------------------------------
 
                 hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
@@ -556,3 +532,30 @@ def register_free_crossattn_upblock3d(model, b1=1.2, b2=1.4, s1=0.9, s2=0.2):
             setattr(upsample_block, 'b2', b2)
             setattr(upsample_block, 's1', s1)
             setattr(upsample_block, 's2', s2)
+            
+def freeu_code(hidden_states, res_hidden_states,self):
+    d = hidden_states.device
+    # --------------- FreeU code -----------------------
+    # Only operate on the first two stages
+    if hidden_states.shape[1] == 1280:
+        
+        hidden_mean = hidden_states.mean(1).unsqueeze(1)
+        B = hidden_mean.shape[0]
+        hidden_max, _ = torch.max(hidden_mean.view(B, -1), dim=-1, keepdim=True) 
+        hidden_min, _ = torch.min(hidden_mean.view(B, -1), dim=-1, keepdim=True)
+        hidden_mean = (hidden_mean - hidden_min.unsqueeze(2).unsqueeze(3)) / (hidden_max - hidden_min).unsqueeze(2).unsqueeze(3)
+
+        hidden_states[:,:640] = hidden_states[:,:640] * ((self.b1 - 1) * hidden_mean + 1)
+        res_hidden_states = Fourier_filter(res_hidden_states.cpu(), threshold=1, scale=self.s1).to(res_hidden_states.device)
+    if hidden_states.shape[1] == 640:
+    
+        hidden_mean = hidden_states.mean(1).unsqueeze(1)
+        B = hidden_mean.shape[0]
+        hidden_max, _ = torch.max(hidden_mean.view(B, -1), dim=-1, keepdim=True) 
+        hidden_min, _ = torch.min(hidden_mean.view(B, -1), dim=-1, keepdim=True)
+        hidden_mean = (hidden_mean - hidden_min.unsqueeze(2).unsqueeze(3)) / (hidden_max - hidden_min).unsqueeze(2).unsqueeze(3)
+    
+        hidden_states[:,:320] = hidden_states[:,:320] * ((self.b2 - 1) * hidden_mean + 1)
+        res_hidden_states = Fourier_filter(res_hidden_states.cpu(), threshold=1, scale=self.s2).to(res_hidden_states.device)
+    # ---------------------------------------------------------
+    res_hidden_states.to(d)
